@@ -1,0 +1,14 @@
+{
+  "name": "savior-x-bot",
+  "version": "2.0.0",
+  "description": "X (Twitter) Auto Post & Claim Bot for SaviorOfHealth",
+  "main": "index.js",
+  "dependencies": {
+    "ethers": "^5.7.2",
+    "socks-proxy-agent": "^8.0.2",
+    "https-proxy-agent": "^7.0.2"
+  },
+  "scripts": {
+    "start": "node index.js"
+  }
+}

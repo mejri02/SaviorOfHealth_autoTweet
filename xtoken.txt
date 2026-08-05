@@ -1,0 +1,3 @@
+username1
+auth_token_value_here
+ct0_value_here
