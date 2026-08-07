@@ -16,13 +16,12 @@ const CONFIG = {
   apiUrl: 'https://saviorofhealth.app',
   xBearer: 'AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA',
   maxPostsPerDay: 5,
-  groqTimeout: 20000,
+  groqTimeout: 25000,
   groqModels: ['llama-3.1-8b-instant', 'mixtral-8x7b-32768'],
-  // INCREASED DELAYS TO AVOID DETECTION
-  postDelayMin: 60000,     // 10 minutes
-  postDelayMax: 70000,     // 15 minutes
-  accountDelayMin: 300000,  // 5 minutes
-  accountDelayMax: 600000,  // 10 minutes
+  postDelayMin: 120000,
+  postDelayMax: 300000,
+  accountDelayMin: 300000,
+  accountDelayMax: 900000,
 };
 
 const COLORS = {
@@ -49,7 +48,7 @@ function log(message, type = 'info', data = null) {
     highlight: { color: COLORS.brightMagenta, icon: '✨' },
     debug: { color: COLORS.gray, icon: '🔍' },
     x: { color: COLORS.brightCyan, icon: '🐦' },
-    claim: { color: COLORS.brightGreen, icon: '🎯' },
+    claim: { color: COLORS.brightGreen, icon: ' 🎯' },
     sleep: { color: COLORS.brightYellow, icon: '💤' },
     nextday: { color: COLORS.brightYellow, icon: '🌅' },
   };
@@ -61,9 +60,9 @@ function log(message, type = 'info', data = null) {
 }
 
 function logBanner(message) {
-  console.log(`\n${COLORS.brightCyan}${'='.repeat(60)}${COLORS.reset}`);
+  console.log(`\n${COLORS.brightCyan}${'='.repeat(50)}${COLORS.reset}`);
   console.log(`${COLORS.brightYellow}  ${message}  ${COLORS.reset}`);
-  console.log(`${COLORS.brightCyan}${'='.repeat(60)}${COLORS.reset}\n`);
+  console.log(`${COLORS.brightCyan}${'='.repeat(50)}${COLORS.reset}\n`);
 }
 
 function sleep(ms) {
@@ -87,7 +86,7 @@ function getRandomUserAgent() {
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
     'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Mozilla/5.0 (iPhone; CPU iPhone OS 17_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Mobile/15E148 Safari/604.1',
-    'Mozilla/5.0 (Linux; Android 14; SM-S921B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.230 Mobile Safari/537.36',
+    'Mozilla/5.0 (Linux; Android 14; SM-S921B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
   ];
   return agents[Math.floor(Math.random() * agents.length)];
 }
@@ -114,9 +113,9 @@ function loadXTokens() {
     const raw = fs.readFileSync(XTOKEN_FILE, 'utf-8').replace(/\r/g, '');
     return raw.split(/\n\s*\n/).map(block => {
       const lines = block.trim().split('\n').map(l => l.trim()).filter(l => l);
-      return { 
-        username: lines[0], 
-        auth_token: lines[1], 
+      return {
+        username: lines[0],
+        auth_token: lines[1],
         ct0: lines[2],
         valid: !!(lines[0] && lines[1] && lines[2])
       };
@@ -139,8 +138,8 @@ function loadProxies() {
   try {
     const raw = fs.readFileSync(PROXY_FILE, 'utf-8').replace(/\r/g, '');
     return raw.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
-  } catch { 
-    return []; 
+  } catch {
+    return [];
   }
 }
 
@@ -196,13 +195,13 @@ async function fetchWithProxy(url, options = {}, proxyString = null) {
   if (!headers['User-Agent']) {
     headers['User-Agent'] = getRandomUserAgent();
   }
-  
+
   const finalOptions = { ...options, headers };
   if (proxyString) {
     const agent = createProxyAgent(proxyString);
     if (agent) finalOptions.agent = agent;
   }
-  
+
   return fetch(url, finalOptions);
 }
 
@@ -212,7 +211,6 @@ async function generateTweetWithGroq(topic = 'saviorofhealth health wellness', p
 
   const key = getNextGroqKey(keys);
   const model = getNextGroqModel();
-  // ROTATE PROXY FOR GROQ CALL
   const proxyString = proxies.length > 0 ? getNextProxy(proxies) : null;
   if (!key) return null;
 
@@ -257,7 +255,7 @@ async function generateTweetWithGroq(topic = 'saviorofhealth health wellness', p
     if (!data.choices || !data.choices[0] || !data.choices[0].message) {
       return null;
     }
-    
+
     const tweet = data.choices[0].message.content.trim();
     return tweet.replace(/^["']|["']$/g, '').replace(/\s+/g, ' ').substring(0, 280);
   } catch (error) {
@@ -282,10 +280,10 @@ function generateSIWEMessage(address, chainId = 56) {
 async function loginSavior(privateKey, proxyString = null) {
   const wallet = new ethers.Wallet(privateKey);
   const address = wallet.address;
-  
+
   const message = generateSIWEMessage(address, 56);
   const signature = await wallet.signMessage(message);
-  
+
   const response = await fetchWithProxy(CONFIG.apiUrl + '/api/auth/wallet/siwe', {
     method: 'POST',
     headers: {
@@ -293,7 +291,7 @@ async function loginSavior(privateKey, proxyString = null) {
     },
     body: JSON.stringify({ message, signature }),
   }, proxyString);
-  
+
   const data = await response.json();
   if (!data.token) {
     throw new Error(data.error || 'Login failed');
@@ -326,11 +324,10 @@ function xHeaders(xtoken) {
 
 async function postTweet(xtoken, text, proxies = [], retries = 0) {
   const MAX_RETRIES = 1;
-  
-  // ROTATE PROXY FOR EVERY TWEET
+
   const proxyString = proxies.length > 0 ? getNextProxy(proxies) : null;
   if (proxyString) log(`Using proxy for tweet`, 'info');
-  
+
   const delay = randomDelay(CONFIG.postDelayMin, CONFIG.postDelayMax);
   const secs = Math.floor(delay / 1000);
   const mins = Math.floor(secs / 60);
@@ -338,7 +335,7 @@ async function postTweet(xtoken, text, proxies = [], retries = 0) {
   await sleep(delay);
 
   const QUERY_ID = 'SoVnbfCycZ7fERGCwpZkYA';
-  
+
   const payload = {
     variables: {
       tweet_text: text,
@@ -385,23 +382,23 @@ async function postTweet(xtoken, text, proxies = [], retries = 0) {
 
     if (result?.errors && Array.isArray(result.errors) && result.errors.length > 0) {
       const errors = result.errors;
-      
+
       for (const err of errors) {
         const errorMsg = err.message || '';
-        
+
         if (errorMsg.includes('daily limit') || errorMsg.includes('Too many requests')) {
           throw new Error('XLimit::TooManyRequests');
         }
-        
+
         if (errorMsg.includes('suspended') || errorMsg.includes('locked')) {
           throw new Error('XAccount::Suspended');
         }
-        
+
         if (errorMsg.includes('Not Authorized')) {
           throw new Error('XAccount::Unauthorized');
         }
       }
-      
+
       throw new Error('XError::' + (errors[0]?.message || 'Unknown'));
     }
 
@@ -431,7 +428,7 @@ async function getPostsStatus(token, proxyString = null) {
       'Authorization': 'Bearer ' + token,
     },
   }, proxyString);
-  
+
   const data = await response.json();
   if (!response.ok) {
     throw new Error(data.error || 'Failed to fetch posts status');
@@ -448,7 +445,7 @@ async function submitToSavior(token, tweetUrl, proxyString = null) {
     },
     body: JSON.stringify({ url: tweetUrl }),
   }, proxyString);
-  
+
   const data = await response.json();
   if (!response.ok) {
     throw new Error(data.error || 'Submission failed');
@@ -461,7 +458,7 @@ function getSleepUntilNextDay() {
   const tomorrow = new Date(now);
   tomorrow.setDate(tomorrow.getDate() + 1);
   tomorrow.setHours(0, 0, 0, 0);
-  
+
   const timeUntilNextDay = tomorrow.getTime() - now.getTime();
   const randomOffset = randomDelay(0, 14400000);
   return timeUntilNextDay + randomOffset;
@@ -471,7 +468,7 @@ async function sleepUntilNextDay(reason = 'Daily limit reached') {
   const sleepTime = getSleepUntilNextDay();
   const hours = Math.floor(sleepTime / 3600000);
   const minutes = Math.floor((sleepTime % 3600000) / 60000);
-  
+
   log(`🌅 Sleeping ${hours}h ${minutes}m - ${reason}`, 'nextday');
   await sleep(sleepTime);
   log('🌅 New day! Resuming...', 'success');
@@ -488,7 +485,7 @@ const defaultMessages = [
 async function processAccount(account, xtokens, proxies, idx) {
   const shortAddr = account.privateKey.substring(0, 10) + '...' + account.privateKey.substring(account.privateKey.length - 6);
   const name = account.name || `Account ${idx + 1}`;
-  
+
   logBanner(`Processing ${name} (${shortAddr})`);
 
   try {
@@ -501,9 +498,9 @@ async function processAccount(account, xtokens, proxies, idx) {
     const status = await getPostsStatus(token, statusProxy);
     const remaining = status.todayRemaining || 0;
     const rewardPerPost = status.reward || 150;
-    
+
     log(`Daily: ${remaining}/5 posts remaining (${rewardPerPost} HP each)`, 'info');
-    
+
     if (remaining <= 0) {
       log('Daily limit reached!', 'warning');
       await sleepUntilNextDay('Daily limit reached');
@@ -520,12 +517,12 @@ async function processAccount(account, xtokens, proxies, idx) {
         log('No X tokens available', 'error');
         break;
       }
-      
+
       log(`\n📝 Post ${i + 1}/${maxPosts}...`, 'highlight');
 
       let tweetText = null;
       tweetText = await generateTweetWithGroq('saviorofhealth health wellness', proxies);
-      
+
       if (!tweetText || tweetText.length < 5 || tweetText.length > 280) {
         tweetText = defaultMessages[i % defaultMessages.length];
         log('Using default message', 'info');
@@ -558,19 +555,19 @@ async function processAccount(account, xtokens, proxies, idx) {
       } catch (error) {
         const errorMsg = error.message || '';
         log(`Post failed: ${errorMsg}`, 'error');
-        
+
         if (errorMsg.includes('XAccount::')) {
           log('Account issue - switching to next X account', 'warning');
           continue;
         }
-        
+
         if (errorMsg.includes('XLimit::')) {
           log('Rate limited - waiting 2 minutes', 'warning');
           await sleep(120000);
           i--;
           continue;
         }
-        
+
         log('Waiting before retry...', 'warning');
         await sleep(60000);
       }
@@ -611,7 +608,7 @@ async function runAllAccounts() {
 
   for (let i = 0; i < totalAccounts; i++) {
     await processAccount(accounts[i], xtokens, proxies, i);
-    
+
     if (i < totalAccounts - 1) {
       const delay = randomDelay(CONFIG.accountDelayMin, CONFIG.accountDelayMax);
       const mins = Math.floor(delay / 60000);
@@ -622,28 +619,20 @@ async function runAllAccounts() {
 
   log('All accounts done. Sleeping until tomorrow...', 'nextday');
   await sleepUntilNextDay('All accounts completed');
-  
+
   log('Starting new cycle...', 'info');
   await runAllAccounts();
 }
 
 const BANNER = `
-╔═══════════════════════════════════════════════════════════╗
-║                                                           ║
-║   🐦  X (Twitter) Auto Post Bot - FULLY FIXED           ║
-║   🤖  AI Tweets + Default Fallback                      ║
-║   📦  Multi-Account X Token Rotation                     ║
-║   🎯  Auto-Submit to SaviorOfHealth                     ║
-║   ⏰  Human-like Delays (10-15min)                       ║
-║   🛡️  Smart Error Handling                              ║
-║   🌅  Auto-Sleep Until Next Day                        ║
-║                                                           ║
-╚═══════════════════════════════════════════════════════════╝
+╔═══════════════════════════════════╗
+║  SaviorOfHealth Auto Tweet Bot   ║
+╚═══════════════════════════════════╝
 `;
 
 async function main() {
   console.log(BANNER);
-  
+
   while (true) {
     try {
       await runAllAccounts();
