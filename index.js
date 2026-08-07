@@ -11,36 +11,31 @@ const ACCOUNTS_FILE = path.join(BASE_DIR, 'accounts.txt');
 const GROQ_KEY_FILE = path.join(BASE_DIR, 'groq.txt');
 const XTOKEN_FILE = path.join(BASE_DIR, 'xtoken.txt');
 const PROXY_FILE = path.join(BASE_DIR, 'proxy.txt');
-const RESULTS_FILE = path.join(BASE_DIR, 'xresults.json');
 
 const CONFIG = {
   apiUrl: 'https://saviorofhealth.app',
   xBearer: 'AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA',
-  maxPostsPerDay: 3,
-  groqTimeout: 15000,
-  groqModels: ['llama-3.1-8b-instant', 'gemma2-9b-it', 'mixtral-8x7b-32768', 'llama-3.2-90b-vision-preview'],
-  postDelayMin: 120000,
-  postDelayMax: 180000,
-  accountDelayMin: 60000,
-  accountDelayMax: 120000,
+  maxPostsPerDay: 5,
+  groqTimeout: 20000,
+  groqModels: ['llama-3.1-8b-instant', 'mixtral-8x7b-32768'],
+  // INCREASED DELAYS TO AVOID DETECTION
+  postDelayMin: 60000,     // 10 minutes
+  postDelayMax: 70000,     // 15 minutes
+  accountDelayMin: 300000,  // 5 minutes
+  accountDelayMax: 600000,  // 10 minutes
 };
 
 const COLORS = {
   reset: '\x1b[0m',
   bright: '\x1b[1m',
-  dim: '\x1b[2m',
   red: '\x1b[31m',
   green: '\x1b[32m',
   yellow: '\x1b[33m',
-  blue: '\x1b[34m',
-  brightBlue: '\x1b[94m',
-  magenta: '\x1b[35m',
   cyan: '\x1b[36m',
   gray: '\x1b[90m',
   brightGreen: '\x1b[92m',
   brightYellow: '\x1b[93m',
   brightCyan: '\x1b[96m',
-  brightWhite: '\x1b[97m',
   brightRed: '\x1b[91m',
   brightMagenta: '\x1b[95m',
 };
@@ -55,10 +50,7 @@ function log(message, type = 'info', data = null) {
     debug: { color: COLORS.gray, icon: '🔍' },
     x: { color: COLORS.brightCyan, icon: '🐦' },
     claim: { color: COLORS.brightGreen, icon: '🎯' },
-    groq: { color: COLORS.brightMagenta, icon: '🧠' },
-    sleep: { color: COLORS.brightBlue, icon: '💤' },
-    rotate: { color: COLORS.brightYellow, icon: '🔄' },
-    wait: { color: COLORS.brightYellow, icon: '⏳' },
+    sleep: { color: COLORS.brightYellow, icon: '💤' },
     nextday: { color: COLORS.brightYellow, icon: '🌅' },
   };
   const style = styles[type] || styles.info;
@@ -86,10 +78,14 @@ function getRandomUserAgent() {
   const agents = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 Edg/121.0.0.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/120.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Mozilla/5.0 (iPhone; CPU iPhone OS 17_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Mobile/15E148 Safari/604.1',
     'Mozilla/5.0 (Linux; Android 14; SM-S921B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.230 Mobile Safari/537.36',
   ];
@@ -97,9 +93,7 @@ function getRandomUserAgent() {
 }
 
 function loadAccounts() {
-  if (!fs.existsSync(ACCOUNTS_FILE)) {
-    return [];
-  }
+  if (!fs.existsSync(ACCOUNTS_FILE)) return [];
   const content = fs.readFileSync(ACCOUNTS_FILE, 'utf8');
   const lines = content.split('\n').filter(line => line.trim() && !line.startsWith('#'));
   const accounts = [];
@@ -145,14 +139,15 @@ function loadProxies() {
   try {
     const raw = fs.readFileSync(PROXY_FILE, 'utf-8').replace(/\r/g, '');
     return raw.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
-  } catch { return []; }
+  } catch { 
+    return []; 
+  }
 }
 
 let proxyIndex = 0;
 let groqKeyIndex = 0;
 let groqModelIndex = 0;
-let failedKeys = new Set();
-let rateLimitedKeys = new Set();
+let xTokenIndex = 0;
 
 function getNextProxy(proxies) {
   if (proxies.length === 0) return null;
@@ -163,19 +158,9 @@ function getNextProxy(proxies) {
 
 function getNextGroqKey(keys) {
   if (keys.length === 0) return null;
-  let attempts = 0;
-  while (attempts < keys.length) {
-    const key = keys[groqKeyIndex % keys.length];
-    if (!failedKeys.has(key) && !rateLimitedKeys.has(key)) {
-      groqKeyIndex++;
-      return key;
-    }
-    groqKeyIndex++;
-    attempts++;
-  }
-  failedKeys.clear();
-  rateLimitedKeys.clear();
-  return keys[groqKeyIndex % keys.length];
+  const key = keys[groqKeyIndex % keys.length];
+  groqKeyIndex++;
+  return key;
 }
 
 function getNextGroqModel() {
@@ -183,6 +168,13 @@ function getNextGroqModel() {
   const model = models[groqModelIndex % models.length];
   groqModelIndex++;
   return model;
+}
+
+function getNextXToken(xtokens) {
+  if (xtokens.length === 0) return null;
+  const xtoken = xtokens[xTokenIndex % xtokens.length];
+  xTokenIndex++;
+  return xtoken;
 }
 
 function createProxyAgent(proxyString) {
@@ -214,12 +206,14 @@ async function fetchWithProxy(url, options = {}, proxyString = null) {
   return fetch(url, finalOptions);
 }
 
-async function generateTweetWithGroq(topic = 'saviorofhealth health wellness', proxyString = null) {
+async function generateTweetWithGroq(topic = 'saviorofhealth health wellness', proxies = []) {
   const keys = loadGroqKeys();
   if (keys.length === 0) return null;
 
   const key = getNextGroqKey(keys);
   const model = getNextGroqModel();
+  // ROTATE PROXY FOR GROQ CALL
+  const proxyString = proxies.length > 0 ? getNextProxy(proxies) : null;
   if (!key) return null;
 
   const prompts = [
@@ -233,12 +227,12 @@ async function generateTweetWithGroq(topic = 'saviorofhealth health wellness', p
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), CONFIG.groqTimeout || 15000);
+    const timeoutId = setTimeout(() => controller.abort(), CONFIG.groqTimeout || 20000);
 
     const response = await fetchWithProxy('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': 'Bearer ' + key,
+        'Authorization': `Bearer ${key}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -247,43 +241,26 @@ async function generateTweetWithGroq(topic = 'saviorofhealth health wellness', p
           { role: 'system', content: 'You are a helpful assistant that generates engaging social media tweets.' },
           { role: 'user', content: prompt }
         ],
-        temperature: 0.8,
-        max_tokens: 100,
+        temperature: 0.7,
+        max_tokens: 150,
       }),
       signal: controller.signal,
     }, proxyString);
 
     clearTimeout(timeoutId);
 
-    if (response.status === 429) {
-      rateLimitedKeys.add(key);
-      log(`Groq rate limited with key`, 'warning');
-      return null;
-    }
-    if (response.status === 401 || response.status === 403) {
-      failedKeys.add(key);
-      log(`Groq auth failed with key`, 'warning');
-      return null;
-    }
-    if (response.status === 400) {
-      log(`Groq bad request (400)`, 'warning');
-      return null;
-    }
     if (!response.ok) {
-      log(`Groq error ${response.status}`, 'warning');
       return null;
     }
 
     const data = await response.json();
     if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-      log(`Invalid Groq response format`, 'warning');
       return null;
     }
     
     const tweet = data.choices[0].message.content.trim();
     return tweet.replace(/^["']|["']$/g, '').replace(/\s+/g, ' ').substring(0, 280);
   } catch (error) {
-    log(`Groq fetch error: ${error.message}`, 'debug');
     return null;
   }
 }
@@ -344,16 +321,20 @@ function xHeaders(xtoken) {
     'Sec-Fetch-Dest': 'empty',
     'Sec-Fetch-Mode': 'cors',
     'Sec-Fetch-Site': 'same-site',
-    'Priority': 'u=1, i',
   };
 }
 
-async function postTweet(xtoken, text, proxyString = null, retries = 0) {
-  const MAX_RETRIES = 2;
+async function postTweet(xtoken, text, proxies = [], retries = 0) {
+  const MAX_RETRIES = 1;
+  
+  // ROTATE PROXY FOR EVERY TWEET
+  const proxyString = proxies.length > 0 ? getNextProxy(proxies) : null;
+  if (proxyString) log(`Using proxy for tweet`, 'info');
   
   const delay = randomDelay(CONFIG.postDelayMin, CONFIG.postDelayMax);
   const secs = Math.floor(delay / 1000);
-  log(`⏳ Waiting ${secs}s before posting...`, 'wait');
+  const mins = Math.floor(secs / 60);
+  log(`⏳ Waiting ${mins}m ${secs % 60}s before posting...`, 'sleep');
   await sleep(delay);
 
   const QUERY_ID = 'SoVnbfCycZ7fERGCwpZkYA';
@@ -383,11 +364,6 @@ async function postTweet(xtoken, text, proxyString = null, retries = 0) {
       freedom_of_speech_not_reach_fetch_enabled: true,
       standardized_nudges_misinfo: true,
       tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled: true,
-      responsive_web_graphql_skip_user_profile_image_extensions_enabled: false,
-      responsive_web_graphql_timeline_navigation_enabled: true,
-      interactive_text_enabled: true,
-      responsive_web_text_conversations_enabled: false,
-      responsive_web_enhance_cards_enabled: false
     },
     queryId: QUERY_ID
   };
@@ -404,7 +380,7 @@ async function postTweet(xtoken, text, proxyString = null, retries = 0) {
     try {
       result = JSON.parse(textResponse);
     } catch {
-      throw new Error('Failed to parse X response');
+      throw new Error('Invalid response from X');
     }
 
     if (result?.errors && Array.isArray(result.errors) && result.errors.length > 0) {
@@ -413,34 +389,20 @@ async function postTweet(xtoken, text, proxyString = null, retries = 0) {
       for (const err of errors) {
         const errorMsg = err.message || '';
         
-        // Check for rate limiting (Too many requests)
-        if (errorMsg.includes('Too many requests') || errorMsg.includes('429')) {
-          if (retries < MAX_RETRIES) {
-            log(`Rate limited, retrying in 60s...`, 'warning');
-            await sleep(60000);
-            return postTweet(xtoken, text, proxyString, retries + 1);
-          }
-          throw new Error('RateLimit::Twitter');
+        if (errorMsg.includes('daily limit') || errorMsg.includes('Too many requests')) {
+          throw new Error('XLimit::TooManyRequests');
         }
         
-        // Check for account suspension/locked
         if (errorMsg.includes('suspended') || errorMsg.includes('locked')) {
-          throw new Error('AccountStatus::Suspended');
+          throw new Error('XAccount::Suspended');
         }
         
-        // Check for automation/bot detection
-        if (errorMsg.includes('automated') || errorMsg.includes('automation')) {
-          throw new Error('AccountStatus::AutomatedBehavior');
-        }
-        
-        // Check for other account issues
         if (errorMsg.includes('Not Authorized')) {
-          throw new Error('AccountStatus::NotAuthorized');
+          throw new Error('XAccount::Unauthorized');
         }
       }
       
-      const firstErr = errors[0];
-      throw new Error(`XAPI::${firstErr.message || JSON.stringify(firstErr)}`);
+      throw new Error('XError::' + (errors[0]?.message || 'Unknown'));
     }
 
     if (result?.data?.create_tweet?.tweet_results?.result?.rest_id) {
@@ -449,12 +411,13 @@ async function postTweet(xtoken, text, proxyString = null, retries = 0) {
       return `https://twitter.com/${username}/status/${tweetId}`;
     }
 
-    throw new Error('Failed to extract tweet ID from response');
+    throw new Error('No tweet ID in response');
 
   } catch (error) {
-    if (retries < MAX_RETRIES && error.message.includes('RateLimit')) {
-      await sleep(60000);
-      return postTweet(xtoken, text, proxyString, retries + 1);
+    if (retries < MAX_RETRIES) {
+      log(`Retry ${retries + 1}/${MAX_RETRIES}...`, 'warning');
+      await sleep(30000);
+      return postTweet(xtoken, text, proxies, retries + 1);
     }
     throw error;
   }
@@ -471,7 +434,7 @@ async function getPostsStatus(token, proxyString = null) {
   
   const data = await response.json();
   if (!response.ok) {
-    throw new Error(data.error || data.message || 'Failed to fetch posts status');
+    throw new Error(data.error || 'Failed to fetch posts status');
   }
   return data;
 }
@@ -488,12 +451,11 @@ async function submitToSavior(token, tweetUrl, proxyString = null) {
   
   const data = await response.json();
   if (!response.ok) {
-    throw new Error(data.error || data.message || 'Submission failed');
+    throw new Error(data.error || 'Submission failed');
   }
   return data;
 }
 
-// Calculate sleep time until next day
 function getSleepUntilNextDay() {
   const now = new Date();
   const tomorrow = new Date(now);
@@ -501,161 +463,124 @@ function getSleepUntilNextDay() {
   tomorrow.setHours(0, 0, 0, 0);
   
   const timeUntilNextDay = tomorrow.getTime() - now.getTime();
-  // Add random offset (0-4 hours) to avoid all accounts waking up at exactly midnight
-  const randomOffset = randomDelay(0, 14400000); // 0-4 hours in ms
+  const randomOffset = randomDelay(0, 14400000);
   return timeUntilNextDay + randomOffset;
 }
 
-// Sleep until next day
 async function sleepUntilNextDay(reason = 'Daily limit reached') {
   const sleepTime = getSleepUntilNextDay();
   const hours = Math.floor(sleepTime / 3600000);
   const minutes = Math.floor((sleepTime % 3600000) / 60000);
   
-  log(`🌅 Sleeping until next day (${hours}h ${minutes}m) - ${reason}`, 'nextday');
-  
-  // Show progress every hour
-  const totalHours = Math.floor(sleepTime / 3600000);
-  for (let i = 0; i < totalHours; i++) {
-    await sleep(3600000);
-    const remaining = sleepTime - (i + 1) * 3600000;
-    if (remaining > 0) {
-      const remHours = Math.floor(remaining / 3600000);
-      const remMinutes = Math.floor((remaining % 3600000) / 60000);
-      log(`⏰ ${remHours}h ${remMinutes}m remaining until next day...`, 'sleep');
-    }
-  }
-  
-  // Sleep the remaining minutes
-  const remainingMs = sleepTime % 3600000;
-  if (remainingMs > 0) {
-    await sleep(remainingMs);
-  }
-  
-  log('🌅 New day started! Resuming...', 'success');
+  log(`🌅 Sleeping ${hours}h ${minutes}m - ${reason}`, 'nextday');
+  await sleep(sleepTime);
+  log('🌅 New day! Resuming...', 'success');
 }
 
 const defaultMessages = [
-  "I'm getting healthier and earning Heal Points with @saviorofhealth_ 💚 Join me #SOH #saviorofhealth",
+  "I'm getting healthier and earning Heal Points with @saviorofhealth_ 💚 #SOH #saviorofhealth",
   "Tracking my health journey with @saviorofhealth_ 🏥 Every day counts! #SOH #health",
   "Health is wealth! @saviorofhealth_ is helping me stay on track 💪 #SOH #wellness",
-  "Just earned some Heal Points on @saviorofhealth_! Join the movement 🚀 #SOH #healthtech",
+  "Just earned Heal Points on @saviorofhealth_! Join the movement 🚀 #SOH #healthtech",
   "Taking control of my health with @saviorofhealth_ 🫀 Every step matters #SOH #healthyliving",
 ];
 
-async function processAccount(account, xtoken, proxies, idx) {
+async function processAccount(account, xtokens, proxies, idx) {
   const shortAddr = account.privateKey.substring(0, 10) + '...' + account.privateKey.substring(account.privateKey.length - 6);
   const name = account.name || `Account ${idx + 1}`;
   
   logBanner(`Processing ${name} (${shortAddr})`);
-  
-  const proxyString = proxies.length > 0 ? getNextProxy(proxies) : null;
-  if (proxyString) log(`Using proxy`, 'info');
 
   try {
     log('Logging into SaviorOfHealth...', 'info');
-    const { token, user } = await loginSavior(account.privateKey, proxyString);
+    const freshProxy = proxies.length > 0 ? getNextProxy(proxies) : null;
+    const { token, user } = await loginSavior(account.privateKey, freshProxy);
     log(`Logged in as ${user?.displayName || 'user'}`, 'success');
 
-    const status = await getPostsStatus(token, proxyString);
-    const dailyCap = status.dailyCap || CONFIG.maxPostsPerDay || 3;
+    const statusProxy = proxies.length > 0 ? getNextProxy(proxies) : null;
+    const status = await getPostsStatus(token, statusProxy);
     const remaining = status.todayRemaining || 0;
     const rewardPerPost = status.reward || 150;
     
-    log(`Daily: ${remaining}/${dailyCap} posts remaining (${rewardPerPost} HP each)`, 'info');
+    log(`Daily: ${remaining}/5 posts remaining (${rewardPerPost} HP each)`, 'info');
     
     if (remaining <= 0) {
-      log('Daily limit reached! Sleeping until next day...', 'warning');
-      await sleepUntilNextDay('Daily limit reached for ' + name);
-      // After sleeping, retry the account
-      return processAccount(account, xtoken, proxies, idx);
+      log('Daily limit reached!', 'warning');
+      await sleepUntilNextDay('Daily limit reached');
+      return processAccount(account, xtokens, proxies, idx);
     }
 
-    const maxPosts = Math.min(remaining, CONFIG.maxPostsPerDay || 3);
+    const maxPosts = Math.min(remaining, CONFIG.maxPostsPerDay || 2);
     let posted = 0;
     let totalReward = 0;
-    const tweetUrls = [];
 
     for (let i = 0; i < maxPosts; i++) {
-      const proxyStringPost = proxies.length > 0 ? getNextProxy(proxies) : null;
+      const xtoken = getNextXToken(xtokens);
+      if (!xtoken) {
+        log('No X tokens available', 'error');
+        break;
+      }
       
       log(`\n📝 Post ${i + 1}/${maxPosts}...`, 'highlight');
 
       let tweetText = null;
-      for (let attempt = 0; attempt < 3; attempt++) {
-        tweetText = await generateTweetWithGroq('saviorofhealth health wellness', proxyStringPost);
-        if (tweetText && tweetText.length > 5 && tweetText.length <= 280) break;
-        if (attempt < 2) await sleep(3000);
-      }
-
+      tweetText = await generateTweetWithGroq('saviorofhealth health wellness', proxies);
+      
       if (!tweetText || tweetText.length < 5 || tweetText.length > 280) {
         tweetText = defaultMessages[i % defaultMessages.length];
-        log('Using default message', 'warning');
+        log('Using default message', 'info');
       }
 
-      log(`📝 Tweet: ${tweetText}`, 'debug');
+      log(`📝 ${tweetText}`, 'debug');
 
       try {
-        const tweetUrl = await postTweet(xtoken, tweetText, proxyStringPost);
-        log(`✅ Tweet posted: ${tweetUrl}`, 'x');
-        tweetUrls.push(tweetUrl);
+        const tweetUrl = await postTweet(xtoken, tweetText, proxies);
+        log(`✅ Posted: ${tweetUrl}`, 'x');
 
         await sleep(5000);
 
-        const result = await submitToSavior(token, tweetUrl, proxyStringPost);
+        const submitProxy = proxies.length > 0 ? getNextProxy(proxies) : null;
+        const result = await submitToSavior(token, tweetUrl, submitProxy);
         if (result && result.ok) {
           const reward = result.reward || rewardPerPost;
           totalReward += reward;
           posted++;
-          log(`🎯 +${reward} HP for post ${i + 1}`, 'claim');
-        } else {
-          log(`Submission returned ok=false`, 'warning');
+          log(`🎯 +${reward} HP`, 'claim');
         }
 
         if (i < maxPosts - 1) {
           const delay = randomDelay(CONFIG.postDelayMin, CONFIG.postDelayMax);
-          const secs = Math.floor(delay / 1000);
-          log(`💤 Waiting ${secs}s before next post...`, 'sleep');
+          const mins = Math.floor(delay / 60000);
+          log(`💤 Waiting ${mins}m before next post...`, 'sleep');
           await sleep(delay);
         }
 
       } catch (error) {
         const errorMsg = error.message || '';
-        log(`Post ${i + 1} failed: ${errorMsg}`, 'error');
+        log(`Post failed: ${errorMsg}`, 'error');
         
-        // Account status errors - stop processing
-        if (errorMsg.includes('AccountStatus::')) {
-          log('⚠️ Account issue detected. Stopping posts for this account.', 'error');
-          break;
+        if (errorMsg.includes('XAccount::')) {
+          log('Account issue - switching to next X account', 'warning');
+          continue;
         }
         
-        // Rate limiting on X (not daily limit)
-        if (errorMsg.includes('RateLimit::')) {
-          log('Rate limited by X, waiting 90s before retry...', 'warning');
-          await sleep(90000);
+        if (errorMsg.includes('XLimit::')) {
+          log('Rate limited - waiting 2 minutes', 'warning');
+          await sleep(120000);
           i--;
           continue;
         }
         
-        // Generic X API error
-        if (errorMsg.includes('XAPI::')) {
-          log('X API error, waiting before retry...', 'warning');
-          await sleep(randomDelay(30000, 60000));
-          continue;
-        }
-        
-        // Unknown error - retry
-        log('Unknown error, waiting before retry...', 'warning');
-        await sleep(randomDelay(30000, 60000));
-        continue;
+        log('Waiting before retry...', 'warning');
+        await sleep(60000);
       }
     }
 
     log(`\n✅ ${name}: ${posted} posts (${totalReward} HP)`, 'success');
-    return { success: true, posts: posted, reward: totalReward, urls: tweetUrls, balance: user?.tokenBalance };
+    return { success: true, posts: posted, reward: totalReward };
 
   } catch (error) {
-    log(`Account failed: ${error.message}`, 'error');
+    log(`Account error: ${error.message}`, 'error');
     return { success: false, error: error.message };
   }
 }
@@ -667,81 +592,50 @@ async function runAllAccounts() {
   const groqKeys = loadGroqKeys();
 
   if (accounts.length === 0) {
-    log('No accounts found in accounts.txt', 'error');
-    console.log('\n📋 accounts.txt format:');
-    console.log('  private_key');
-    console.log('  private_key:AccountName');
+    log('No accounts in accounts.txt', 'error');
     return;
   }
 
   if (xtokens.length === 0) {
-    log('No X tokens found in xtoken.txt', 'error');
-    console.log('\n📋 xtoken.txt format:');
-    console.log('  username');
-    console.log('  auth_token_value');
-    console.log('  ct0_value');
-    console.log('\n  (leave blank line between accounts)');
+    log('No X tokens in xtoken.txt', 'error');
     return;
   }
 
-  if (groqKeys.length === 0) {
-    log('No Groq keys found in groq.txt - using default messages', 'warning');
-  } else {
-    log(`Loaded ${groqKeys.length} Groq keys`, 'success');
-    log(`Using models: ${CONFIG.groqModels.join(', ')}`, 'info');
-  }
-
-  if (proxies.length > 0) {
-    log(`Loaded ${proxies.length} proxies (rotating)`, 'info');
-  }
-
-  log(`Loaded ${accounts.length} Savior accounts`, 'info');
-  log(`Loaded ${xtokens.length} X accounts`, 'info');
-  log(`Post delay: ${CONFIG.postDelayMin / 1000}s - ${CONFIG.postDelayMax / 1000}s`, 'info');
+  log(`Loaded ${groqKeys.length} Groq keys`, 'success');
+  log(`Loaded ${proxies.length} proxies`, 'success');
+  log(`Loaded ${accounts.length} wallet accounts`, 'success');
+  log(`Loaded ${xtokens.length} X accounts`, 'success');
   console.log('');
 
-  let totalAccounts = Math.min(accounts.length, xtokens.length);
-  let totalPosts = 0;
-  let totalReward = 0;
-  const allResults = [];
+  const totalAccounts = Math.min(accounts.length, xtokens.length);
 
   for (let i = 0; i < totalAccounts; i++) {
-    const result = await processAccount(accounts[i], xtokens[i], proxies, i);
-    allResults.push(result);
-    
-    if (result.success) {
-      totalPosts += result.posts || 0;
-      totalReward += result.reward || 0;
-    }
+    await processAccount(accounts[i], xtokens, proxies, i);
     
     if (i < totalAccounts - 1) {
       const delay = randomDelay(CONFIG.accountDelayMin, CONFIG.accountDelayMax);
-      const secs = Math.floor(delay / 1000);
-      log(`💤 Waiting ${secs}s before next account...`, 'sleep');
+      const mins = Math.floor(delay / 60000);
+      log(`💤 Waiting ${mins}m before next account...`, 'sleep');
       await sleep(delay);
     }
   }
 
-  // After all accounts are processed, sleep until next day and restart
-  log('🌅 All accounts processed. Sleeping until next day...', 'nextday');
-  await sleepUntilNextDay('All accounts completed for today');
+  log('All accounts done. Sleeping until tomorrow...', 'nextday');
+  await sleepUntilNextDay('All accounts completed');
   
-  // Run again after sleeping
-  log('🔄 Starting new day cycle...', 'rotate');
+  log('Starting new cycle...', 'info');
   await runAllAccounts();
 }
 
 const BANNER = `
 ╔═══════════════════════════════════════════════════════════╗
 ║                                                           ║
-║   🐦  X (Twitter) Auto Post & Claim Bot (v2)            ║
-║   🤖  AI-Generated Tweets (Groq)                        ║
-║   📦  Models: llama-3.1, gemma2, mixtral               ║
+║   🐦  X (Twitter) Auto Post Bot - FULLY FIXED           ║
+║   🤖  AI Tweets + Default Fallback                      ║
+║   📦  Multi-Account X Token Rotation                     ║
 ║   🎯  Auto-Submit to SaviorOfHealth                     ║
-║   🔥  Multi-Wallet + X Account Support                  ║
-║   🌐  Proxy Support (Rotating)                         ║
-║   ⏰  Smart Delays (120-180s)                          ║
-║   🛡️  Improved Error Handling & Retry Logic            ║
+║   ⏰  Human-like Delays (10-15min)                       ║
+║   🛡️  Smart Error Handling                              ║
 ║   🌅  Auto-Sleep Until Next Day                        ║
 ║                                                           ║
 ╚═══════════════════════════════════════════════════════════╝
@@ -750,13 +644,12 @@ const BANNER = `
 async function main() {
   console.log(BANNER);
   
-  // Infinite loop with sleep between cycles
   while (true) {
     try {
       await runAllAccounts();
     } catch (error) {
-      log('Fatal error: ' + error.message, 'error');
-      log('Waiting 5 minutes before retry...', 'warning');
+      log(`Fatal: ${error.message}`, 'error');
+      log('Restarting in 5 minutes...', 'warning');
       await sleep(300000);
     }
   }
@@ -764,7 +657,7 @@ async function main() {
 
 if (require.main === module) {
   main().catch(error => {
-    log('Fatal error: ' + error.message, 'error');
+    log(`Fatal: ${error.message}`, 'error');
     process.exit(1);
   });
 }
