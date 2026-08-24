@@ -212,8 +212,131 @@ function getProxyForSession(proxies) {
   }
   
   sessionProxy = workingProxies[Math.floor(Math.random() * workingProxies.length)];
-  log(`🌐 Using proxy for session: ${proxyString.split('@').pop() || proxyString}`, 'info');
+  log(`Using proxy for session: ${sessionProxy.split('@').pop() || sessionProxy}`, 'info');
   return sessionProxy;
+}
+
+function validateAndCleanTweet(answer) {
+  const preamblePhrases = [
+    "here's",
+    "here is",
+    "this tweet",
+    "tweet:",
+    "my tweet:",
+    "a tweet",
+    "this is a",
+    "i'd write",
+    "you could",
+    "you might",
+    "one example",
+    "something like",
+    "perhaps",
+    "how about",
+    "try this",
+    "note:",
+    "based on",
+    "concise",
+    "meets the requirements",
+    "genuine-sounding",
+    "thinking process",
+    "thinking:",
+    "response:",
+    "output:",
+    "result:",
+    "tweet text:",
+    "tweet content:",
+    "message:",
+    "post:",
+    "content:",
+    "here's a",
+    "i suggest",
+    "i propose",
+    "let me",
+    "would be",
+    "could be",
+    "might be",
+    "sounds like",
+    "imagine",
+    "picture this",
+    "example:",
+    "sample:",
+    "draft:",
+    "analyze",
+    "user input",
+    "step",
+    "approach",
+    "format:",
+    "instruction:",
+    "the tweet:",
+    "creating:",
+    "writing:",
+    "creating a",
+    "writing a",
+    "how to",
+    "way to",
+    "best way",
+    "topic:",
+    "subject:",
+    "main point:",
+    "key point:",
+    "idea:",
+    "concept:",
+    "your tweet:",
+    "suggested tweet:",
+    "proposed tweet:",
+    "final tweet:",
+  ];
+
+  let lines = answer.split('\n').filter(l => l.trim());
+  let cleanAnswer = '';
+  
+  for (const line of lines) {
+    const trimmed = line.trim().toLowerCase();
+    const original = line.trim();
+    
+    if (trimmed === '') continue;
+
+    if (trimmed.match(/^\d+\.\s/) || 
+        trimmed.match(/^[a-z]\.\s/) ||
+        trimmed.startsWith('#') || 
+        trimmed.startsWith('**') ||
+        (trimmed.startsWith('-') && trimmed.length < 20) ||
+        trimmed.startsWith('*') ||
+        trimmed.startsWith('---') ||
+        (trimmed.includes(':') && trimmed.length < 60)) {
+      continue;
+    }
+    
+    let isPreamble = false;
+    for (const phrase of preamblePhrases) {
+      if (trimmed.startsWith(phrase)) {
+        isPreamble = true;
+        break;
+      }
+    }
+    
+    if (isPreamble) continue;
+    
+    if (original.length > 15) {
+      cleanAnswer = original;
+      break;
+    }
+  }
+
+  if (!cleanAnswer) {
+    cleanAnswer = answer.trim();
+  }
+
+  cleanAnswer = cleanAnswer
+    .replace(/^[^:]*:\s*/, '')
+    .replace(/^\d+\.\s*/, '')
+    .replace(/^[a-z]\.\s*/, '')
+    .replace(/^\*\*|\*\*$/g, '')
+    .replace(/^- /, '')
+    .replace(/^["']|["']$/, '')
+    .trim();
+
+  return cleanAnswer;
 }
 
 class GroqManager {
@@ -221,17 +344,17 @@ class GroqManager {
     this.apiKeys = [];
     this.currentKeyIndex = 0;
     this.currentModelIndex = 0;
-    this.allModels = [...CONFIG.groqModels, ...CONFIG.gptOssModels];
+    this.allModels = [...CONFIG.gptOssModels, ...CONFIG.groqModels];
     this.failedKeys = new Set();
     this.rateLimitedKeys = new Set();
     this.loadApiKeys();
     this.useTemplates = this.apiKeys.length === 0;
     
     if (this.useTemplates) {
-      log('❌ No valid Groq keys found - exiting', 'error');
+      log('No valid Groq keys found - exiting', 'error');
       process.exit(1);
     } else {
-      log('✅ Groq AI ready with ' + this.apiKeys.length + ' key(s)', 'success');
+      log('Groq AI ready with ' + this.apiKeys.length + ' key(s)', 'success');
     }
   }
 
@@ -268,7 +391,7 @@ class GroqManager {
   rotateKey(reason = 'Error') {
     if (this.apiKeys.length === 0) return null;
     this.currentKeyIndex = (this.currentKeyIndex + 1) % this.apiKeys.length;
-    log('🔄 Rotated Groq key (' + (this.currentKeyIndex + 1) + '/' + this.apiKeys.length + ')', 'rotate');
+    log('Rotated Groq key (' + (this.currentKeyIndex + 1) + '/' + this.apiKeys.length + ')', 'rotate');
     return this.apiKeys[this.currentKeyIndex];
   }
 
@@ -321,8 +444,7 @@ class GroqManager {
             model: model,
             input: question,
             temperature: 0.9,
-            max_output_tokens: 150,
-            instructions: 'You are a real person sharing authentic health experiences.'
+            max_output_tokens: 150
           };
         } else {
           requestBody = {
@@ -330,7 +452,7 @@ class GroqManager {
             messages: [
               { 
                 role: 'system', 
-                content: 'You are a real person sharing authentic health experiences. Write naturally like a human, not an AI.' 
+                content: 'You are a social media user.' 
               },
               { role: 'user', content: question }
             ],
@@ -422,85 +544,23 @@ class GroqManager {
         answer = answer.trim();
         answer = answer.replace(/^["']|["']$/g, '').trim();
         answer = stripMarkdown(answer);
+        answer = validateAndCleanTweet(answer);
 
-        const preamblePhrases = [
-          "here's",
-          "here is",
-          "this tweet",
-          "tweet:",
-          "my tweet:",
-          "a tweet",
-          "this is a",
-          "i'd write",
-          "you could",
-          "you might",
-          "one example",
-          "something like",
-          "perhaps",
-          "how about",
-          "try this",
-          "note:",
-          "based on",
-          "concise",
-          "meets the requirements",
-          "genuine-sounding"
-        ];
-
-        const lines = answer.split('\n').filter(l => l.trim());
-        let cleanAnswer = '';
-        
-        for (const line of lines) {
-          const trimmed = line.trim().toLowerCase();
-          
-          let isPreamble = false;
-          for (const phrase of preamblePhrases) {
-            if (trimmed.startsWith(phrase)) {
-              isPreamble = true;
-              break;
-            }
-          }
-          
-          if (isPreamble) continue;
-          
-          if (trimmed.startsWith('#') || 
-              trimmed.startsWith('**') ||
-              trimmed.startsWith('-') && trimmed.length < 20 ||
-              trimmed.startsWith('*')) {
-            continue;
-          }
-          
-          const originalLine = line.trim();
-          if (originalLine.length > 10 && !cleanAnswer) {
-            cleanAnswer = originalLine;
-            break;
-          }
-        }
-
-        if (!cleanAnswer) {
-          cleanAnswer = answer;
-        }
-
-        cleanAnswer = cleanAnswer
-          .replace(/^\*\*|\*\*$/g, '')
-          .replace(/^- /, '')
-          .replace(/^["']|["']$/, '')
-          .trim();
-
-        if (cleanAnswer.length < 10 || cleanAnswer.length > 280) {
+        if (answer.length < 10 || answer.length > 280) {
           this.currentModelIndex = (this.currentModelIndex + 1) % this.allModels.length;
           await sleep(1000);
           continue;
         }
 
-        log('✅ Groq generated tweet: ' + cleanAnswer.substring(0, 40) + '...', 'groq');
-        return cleanAnswer;
+        log('Tweet generated: ' + answer.substring(0, 50) + '...', 'groq');
+        return answer;
 
       } catch (error) {
         if (error.name === 'AbortError') {
-          log('⏰ Groq timeout', 'warning');
+          log('Groq timeout', 'warning');
           this.rotateKey('Timeout');
         } else {
-          log('❌ Groq error: ' + error.message, 'error');
+          log('Groq error: ' + error.message, 'error');
           this.rotateKey('Network error');
         }
         await sleep(2000);
@@ -612,18 +672,25 @@ async function generateTweet(proxies = []) {
   const groq = initGroqManager();
   
   const prompts = [
-    `JUST TWEET THIS. NO PREAMBLE. Just a tweet about health today under 280 chars with #SOH #saviorofhealth. Be human. Write it now.`,
-    `TWEET NOW. No "here's", no "this tweet", no explanation. Just write what you'd post about health. Under 280 chars. #SOH #saviorofhealth.`,
-    `Stop explaining. Just write a tweet right now about your health. Casual human vibes. Under 280 chars. #SOH #saviorofhealth. NOW.`,
-    `Tweet only. No words before or after. Just the tweet about staying healthy today. Under 280 chars. #SOH #saviorofhealth.`,
-    `Write JUST the tweet. Nothing else. About your health journey. Casual and real. Under 280 chars. #SOH #saviorofhealth.`,
-    `Only output a tweet. No preamble. About health. Human. Under 280 chars. #SOH #saviorofhealth. Do it now.`,
-    `I need ONLY a tweet now. No introduction. Just health content. Human style. Under 280 chars. #SOH #saviorofhealth.`,
-    `Generate a single tweet ONLY. No setup text. Pure tweet. Health topic. Under 280 chars. #SOH #saviorofhealth.`,
-    `Tweet this second. Nothing before. Just one tweet about wellness. Human tone. Under 280 chars. #SOH #saviorofhealth.`,
-    `DO NOT EXPLAIN. Just tweet about your health. Casual. Under 280 chars. #SOH #saviorofhealth.`,
-    `Forget preamble. Tweet health content now. Human voice. Under 280 chars. #SOH #saviorofhealth. Start with no intro.`,
-    `Zero introduction. Just a health tweet. Real human. Under 280 chars. #SOH #saviorofhealth. Tweet it.`,
+    `Staying active and healthy every single day keeps me feeling great and energized with #SOH #saviorofhealth`,
+    
+    `Just realized how much better I feel when I prioritize my wellness routine daily with #SOH #saviorofhealth`,
+    
+    `Taking care of my body and mind is the best investment I can make for my future with #SOH #saviorofhealth`,
+    
+    `My health journey has taught me that consistency beats perfection every single time with #SOH #saviorofhealth`,
+    
+    `Waking up early and moving my body makes such a huge difference in how I feel all day with #SOH #saviorofhealth`,
+    
+    `Drinking more water and eating whole foods has transformed how much energy I have with #SOH #saviorofhealth`,
+    
+    `Started focusing on sleep quality and my overall health improved dramatically with #SOH #saviorofhealth`,
+    
+    `Health is wealth and I'm finally understanding why taking care of myself matters so much with #SOH #saviorofhealth`,
+    
+    `My wellness goals are on track and I feel stronger every single day with #SOH #saviorofhealth`,
+    
+    `Started my health transformation and already seeing amazing results in just a few weeks with #SOH #saviorofhealth`,
   ];
   
   const prompt = prompts[Math.floor(Math.random() * prompts.length)];
@@ -633,9 +700,11 @@ async function generateTweet(proxies = []) {
   
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const answer = await groq.ask(prompt, null, proxies);
-      if (answer && answer.length > 10 && answer.length <= 280) {
+      let answer = await groq.ask(prompt, null, proxies);
+      
+      if (answer && answer.length > 15 && answer.length <= 280) {
         tweetText = answer;
+        log(`Tweet: ${answer.substring(0, 60)}...`, 'groq');
         break;
       }
     } catch (error) {
@@ -722,20 +791,20 @@ async function postTweet(xtoken, text, proxies = [], retries = 0, isFirstPost = 
 
   let finalText = cleanTweetText(text);
   
-  log(`📝 Cleaned tweet (${finalText.length} chars): ${finalText.substring(0, 60)}...`, 'debug');
+  log(`Cleaned tweet (${finalText.length} chars): ${finalText.substring(0, 60)}...`, 'debug');
 
   if (!isFirstPost) {
     const delay = randomDelay(CONFIG.postDelayMin, CONFIG.postDelayMax);
     const secs = Math.floor(delay / 1000);
     const mins = Math.floor(secs / 60);
-    log(`⏳ Waiting ${mins}m ${secs % 60}s before next post...`, 'sleep');
+    log(`Waiting ${mins}m ${secs % 60}s before next post...`, 'sleep');
     await sleep(delay);
   } else {
-    log('📤 Posting first tweet...', 'info');
+    log('Posting first tweet...', 'info');
   }
 
   const typingDelay = isFirstPost ? randomDelay(1000, 3000) : randomDelay(2000, 5000);
-  log(`⌨️ Simulating typing for ${Math.floor(typingDelay/1000)}s...`, 'info');
+  log(`Simulating typing for ${Math.floor(typingDelay/1000)}s...`, 'info');
   await sleep(typingDelay);
 
   const transactionId = generateTransactionId();
@@ -818,7 +887,7 @@ async function postTweet(xtoken, text, proxies = [], retries = 0, isFirstPost = 
   };
 
   try {
-    log(`📤 Sending tweet request with transaction ID...`, 'info');
+    log(`Sending tweet request with transaction ID...`, 'info');
     
     const response = await fetchWithProxy(`https://x.com/i/api/graphql/${QUERY_ID}/CreateTweet`, {
       method: 'POST',
@@ -827,20 +896,20 @@ async function postTweet(xtoken, text, proxies = [], retries = 0, isFirstPost = 
     }, proxyString);
 
     const textResponse = await response.text();
-    log(`📊 Response status: ${response.status}`, 'debug');
+    log(`Response status: ${response.status}`, 'debug');
     
     let result;
     try {
       result = JSON.parse(textResponse);
     } catch {
-      log(`⚠️ Invalid JSON response: ${textResponse.substring(0, 200)}`, 'error');
+      log(`Invalid JSON response: ${textResponse.substring(0, 200)}`, 'error');
       throw new Error('Invalid response from X');
     }
 
     if (result?.data?.create_tweet?.tweet_results?.result?.rest_id) {
       const tweetId = result.data.create_tweet.tweet_results.result.rest_id;
       const username = result.data.create_tweet.tweet_results.result.core?.user_results?.result?.legacy?.screen_name;
-      log(`✅ Tweet ID: ${tweetId}`, 'success');
+      log(`Tweet ID: ${tweetId}`, 'success');
       await sleep(randomDelay(2000, 5000));
       return `https://twitter.com/${username || 'user'}/status/${tweetId}`;
     }
@@ -855,7 +924,7 @@ async function postTweet(xtoken, text, proxies = [], retries = 0, isFirstPost = 
         finalText = finalText.substring(0, 265) + suffix;
       }
       
-      log(`🔄 Tweet rejected, retrying with suffix: ${suffix}`, 'rotate');
+      log(`Tweet rejected, retrying with suffix: ${suffix}`, 'rotate');
       
       if (retries < MAX_RETRIES) {
         return postTweet(xtoken, finalText, proxies, retries + 1, false);
@@ -865,7 +934,7 @@ async function postTweet(xtoken, text, proxies = [], retries = 0, isFirstPost = 
 
     if (result?.errors) {
       const errorMsg = result.errors[0]?.message || 'Unknown error';
-      log(`❌ X API Error: ${errorMsg}`, 'error');
+      log(`X API Error: ${errorMsg}`, 'error');
       
       if (errorMsg.toLowerCase().includes('daily limit') || errorMsg.toLowerCase().includes('rate')) {
         throw new Error('XLimit::RateLimited');
@@ -873,15 +942,15 @@ async function postTweet(xtoken, text, proxies = [], retries = 0, isFirstPost = 
       throw new Error(`XError: ${errorMsg}`);
     }
 
-    log(`⚠️ Response: ${JSON.stringify(result).substring(0, 300)}`, 'debug');
+    log(`Response: ${JSON.stringify(result).substring(0, 300)}`, 'debug');
     throw new Error('No tweet ID in response');
 
   } catch (error) {
     const errorMsg = error.message || '';
-    log('❌ Post failed: ' + errorMsg, 'error');
+    log('Post failed: ' + errorMsg, 'error');
     
     if (errorMsg.includes('XLimit::RateLimited')) {
-      log('⏳ Rate limited, waiting 10-15 minutes...', 'warning');
+      log('Rate limited, waiting 10-15 minutes...', 'warning');
       await sleep(randomDelay(600000, 900000));
       if (retries < MAX_RETRIES) {
         return postTweet(xtoken, finalText, proxies, retries + 1, false);
@@ -891,7 +960,7 @@ async function postTweet(xtoken, text, proxies = [], retries = 0, isFirstPost = 
     
     if (retries < MAX_RETRIES) {
       const waitTime = (retries + 1) * 60000;
-      log(`🔄 Retry ${retries + 1}/${MAX_RETRIES} in ${Math.round(waitTime/60000)} minutes...`, 'warning');
+      log(`Retry ${retries + 1}/${MAX_RETRIES} in ${Math.round(waitTime/60000)} minutes...`, 'warning');
       await sleep(waitTime + Math.random() * 30000);
       return postTweet(xtoken, finalText, proxies, retries + 1, false);
     }
@@ -953,9 +1022,9 @@ async function sleepUntilNextDay(reason = 'Daily limit reached') {
   const sleepTime = getSleepUntilNextDay();
   const hours = Math.floor(sleepTime / 3600000);
   const minutes = Math.floor((sleepTime % 3600000) / 60000);
-  log(`🌅 Sleeping ${hours}h ${minutes}m - ${reason}`, 'nextday');
+  log(`Sleeping ${hours}h ${minutes}m - ${reason}`, 'nextday');
   await sleep(sleepTime);
-  log('🌅 New day! Resuming...', 'success');
+  log('New day! Resuming...', 'success');
 }
 
 async function processAccount(account, xtokens, proxies, idx) {
@@ -995,14 +1064,14 @@ async function processAccount(account, xtokens, proxies, idx) {
         break;
       }
 
-      log(`\n📝 Post ${i + 1}/${maxPosts}...`, 'highlight');
+      log(`\nPost ${i + 1}/${maxPosts}...`, 'highlight');
 
       let tweetText = await generateTweet(proxies);
-      log(`📝 ${tweetText.substring(0, 80)}${tweetText.length > 80 ? '...' : ''}`, 'debug');
+      log(`${tweetText.substring(0, 80)}${tweetText.length > 80 ? '...' : ''}`, 'debug');
 
       try {
         const tweetUrl = await postTweet(xtoken, tweetText, proxies, 0, i === 0);
-        log(`✅ Posted: ${tweetUrl}`, 'x');
+        log(`Posted: ${tweetUrl}`, 'x');
 
         await sleep(randomDelay(5000, 10000));
 
@@ -1012,13 +1081,13 @@ async function processAccount(account, xtokens, proxies, idx) {
           const reward = result.reward || rewardPerPost;
           totalReward += reward;
           posted++;
-          log(`🎯 +${reward} HP`, 'claim');
+          log(`+${reward} HP`, 'claim');
         }
 
         if (i < maxPosts - 1) {
           const delay = randomDelay(300000, 600000);
           const mins = Math.floor(delay / 60000);
-          log(`💤 Waiting ${mins}m before next post...`, 'sleep');
+          log(`Waiting ${mins}m before next post...`, 'sleep');
           await sleep(delay);
         }
 
@@ -1027,7 +1096,7 @@ async function processAccount(account, xtokens, proxies, idx) {
         log(`Post failed: ${errorMsg}`, 'error');
 
         if (errorMsg.includes('XLimit::RateLimited')) {
-          log('⏳ Rate limited, waiting 15 minutes before retry...', 'warning');
+          log('Rate limited, waiting 15 minutes before retry...', 'warning');
           await sleep(randomDelay(600000, 900000));
           i--;
           continue;
@@ -1039,7 +1108,7 @@ async function processAccount(account, xtokens, proxies, idx) {
       }
     }
 
-    log(`\n✅ ${name}: ${posted} posts (${totalReward} HP)`, 'success');
+    log(`\n${name}: ${posted} posts (${totalReward} HP)`, 'success');
     return { success: true, posts: posted, reward: totalReward };
 
   } catch (error) {
@@ -1068,7 +1137,7 @@ async function runAllAccounts() {
   log(`Loaded ${proxies.length} proxies`, 'success');
   log(`Loaded ${accounts.length} wallet accounts`, 'success');
   log(`Loaded ${xtokens.length} X accounts`, 'success');
-  log(`🧠 Groq AI enabled with ${groq.apiKeys.length} keys`, 'success');
+  log(`Groq AI enabled with ${groq.apiKeys.length} keys`, 'success');
   console.log('');
 
   const totalAccounts = Math.min(accounts.length, xtokens.length);
@@ -1079,7 +1148,7 @@ async function runAllAccounts() {
     if (i < totalAccounts - 1) {
       const delay = randomDelay(600000, 900000);
       const mins = Math.floor(delay / 60000);
-      log(`💤 Waiting ${mins}m before next account...`, 'sleep');
+      log(`Waiting ${mins}m before next account...`, 'sleep');
       await sleep(delay);
     }
   }
