@@ -17,14 +17,10 @@ const CONFIG = {
   xBearer: 'AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA',
   maxPostsPerDay: 2,
   groqTimeout: 30000,
-  groqModels: [
-    'qwen/qwen3.6-27b',
-    'canopylabs/orpheus-v1-english'
-  ],
+  groqModels: [],
   gptOssModels: [
-    'openai/gpt-oss-20b',
-    'openai/gpt-oss-120b',
-    'openai/gpt-oss-safeguard-20b'
+    'groq/compound',
+    'groq/compound-mini',
   ],
   postDelayMin: 120000,
   postDelayMax: 240000,
@@ -217,6 +213,16 @@ function getProxyForSession(proxies) {
 }
 
 function validateAndCleanTweet(answer) {
+  let cleaned = answer.replace(/<think>[\s\S]*?<\/think>/g, '');
+  cleaned = cleaned.replace(/^<think>.*$/gm, '');
+  cleaned = cleaned.replace(/Thinking Process:[\s\S]*?(?=\n\n|$)/i, '');
+  cleaned = cleaned.replace(/Reasoning:[\s\S]*?(?=\n\n|$)/i, '');
+  cleaned = cleaned.replace(/^Reasoning.*$/gm, '');
+  cleaned = cleaned.replace(/^Thinking.*$/gm, '');
+  cleaned = cleaned.trim();
+  
+  if (!cleaned) cleaned = answer;
+
   const preamblePhrases = [
     "here's",
     "here is",
@@ -287,7 +293,7 @@ function validateAndCleanTweet(answer) {
     "final tweet:",
   ];
 
-  let lines = answer.split('\n').filter(l => l.trim());
+  let lines = cleaned.split('\n').filter(l => l.trim());
   let cleanAnswer = '';
   
   for (const line of lines) {
@@ -324,7 +330,7 @@ function validateAndCleanTweet(answer) {
   }
 
   if (!cleanAnswer) {
-    cleanAnswer = answer.trim();
+    cleanAnswer = cleaned.trim();
   }
 
   cleanAnswer = cleanAnswer
@@ -333,7 +339,7 @@ function validateAndCleanTweet(answer) {
     .replace(/^[a-z]\.\s*/, '')
     .replace(/^\*\*|\*\*$/g, '')
     .replace(/^- /, '')
-    .replace(/^["']|["']$/, '')
+    .replace(/^["']|["']$/g, '')
     .trim();
 
   return cleanAnswer;
@@ -385,7 +391,7 @@ class GroqManager {
   }
 
   isGptOssModel(model) {
-    return model && model.startsWith('openai/gpt-oss');
+    return model && (model.startsWith('openai/gpt-oss') || model.startsWith('groq/compound'));
   }
 
   rotateKey(reason = 'Error') {
@@ -438,26 +444,26 @@ class GroqManager {
         let endpoint = 'https://api.groq.com/openai/v1/chat/completions';
         let requestBody;
 
+        const systemContent = options?.systemPrompt || 'You are a social media user.';
+
         if (isGptOss) {
           endpoint = 'https://api.groq.com/openai/v1/responses';
+          const fullInput = `Instructions: ${systemContent}\n\nUser: ${question}`;
           requestBody = {
             model: model,
-            input: question,
-            temperature: 0.9,
-            max_output_tokens: 150
+            input: fullInput,
+            temperature: 0.7,
+            max_output_tokens: 200
           };
         } else {
           requestBody = {
             model: model,
             messages: [
-              { 
-                role: 'system', 
-                content: 'You are a social media user.' 
-              },
+              { role: 'system', content: systemContent },
               { role: 'user', content: question }
             ],
-            temperature: 0.9,
-            max_tokens: 150,
+            temperature: 0.7,
+            max_tokens: 200,
           };
         }
 
@@ -672,39 +678,46 @@ async function generateTweet(proxies = []) {
   const groq = initGroqManager();
   
   const prompts = [
-    `Staying active and healthy every single day keeps me feeling great and energized with #SOH #saviorofhealth`,
-    
-    `Just realized how much better I feel when I prioritize my wellness routine daily with #SOH #saviorofhealth`,
-    
-    `Taking care of my body and mind is the best investment I can make for my future with #SOH #saviorofhealth`,
-    
-    `My health journey has taught me that consistency beats perfection every single time with #SOH #saviorofhealth`,
-    
-    `Waking up early and moving my body makes such a huge difference in how I feel all day with #SOH #saviorofhealth`,
-    
-    `Drinking more water and eating whole foods has transformed how much energy I have with #SOH #saviorofhealth`,
-    
-    `Started focusing on sleep quality and my overall health improved dramatically with #SOH #saviorofhealth`,
-    
-    `Health is wealth and I'm finally understanding why taking care of myself matters so much with #SOH #saviorofhealth`,
-    
-    `My wellness goals are on track and I feel stronger every single day with #SOH #saviorofhealth`,
-    
-    `Started my health transformation and already seeing amazing results in just a few weeks with #SOH #saviorofhealth`,
+    "Generate a short tweet about health and wellness. Must include #SOH and #saviorofhealth. Max 280 chars. Return ONLY the tweet text, nothing else. No explanations, no thinking, no analysis.",
+    "Write a tweet about a health habit that changed your life. Must include #SOH and #saviorofhealth. Max 280 chars. ONLY the tweet text.",
+    "Create a motivational tweet about staying healthy. Must include #SOH and #saviorofhealth. Max 280 chars. JUST the tweet text, no other text.",
+    "Share a quick health tip in a tweet. Must include #SOH and #saviorofhealth. Max 280 chars. Return ONLY the tweet.",
+    "Tweet about the importance of daily health habits. Must include #SOH and #saviorofhealth. Max 280 chars. ONLY the tweet text.",
+    "Write a tweet about your health journey. Must include #SOH and #saviorofhealth. Max 280 chars. Just the tweet.",
+    "Share a wellness win in a tweet. Must include #SOH and #saviorofhealth. Max 280 chars. ONLY the tweet text.",
+    "Post about staying active and healthy. Must include #SOH and #saviorofhealth. Max 280 chars. Just the tweet, nothing else."
   ];
   
   const prompt = prompts[Math.floor(Math.random() * prompts.length)];
   
+  const systemPrompt = "You are a tweet generator. ALWAYS respond with ONLY the tweet text. NEVER include thinking process, reasoning, analysis, or any other text. The tweet MUST contain #SOH and #saviorofhealth. Start response with the tweet directly.";
+  
   let tweetText = null;
   let lastError = null;
   
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 5; attempt++) {
     try {
-      let answer = await groq.ask(prompt, null, proxies);
+      const answer = await groq.ask(prompt, { systemPrompt }, proxies);
       
-      if (answer && answer.length > 15 && answer.length <= 280) {
-        tweetText = answer;
-        log(`Tweet: ${answer.substring(0, 60)}...`, 'groq');
+      let cleanTweet = answer.trim();
+      
+      cleanTweet = cleanTweet.replace(/<think>[\s\S]*?<\/think>/g, '');
+      cleanTweet = cleanTweet.replace(/^<think>.*$/gm, '');
+      cleanTweet = cleanTweet.replace(/^[^:]*:\s*/, '');
+      cleanTweet = cleanTweet.replace(/^["']|["']$/g, '');
+      
+      const lines = cleanTweet.split('\n').filter(l => l.trim());
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if ((trimmed.includes('#SOH') || trimmed.includes('#saviorofhealth')) && trimmed.length > 10) {
+          cleanTweet = trimmed;
+          break;
+        }
+      }
+      
+      if (cleanTweet.length > 10 && cleanTweet.length <= 280) {
+        tweetText = cleanTweet;
+        log(`Tweet: ${tweetText.substring(0, 60)}...`, 'groq');
         break;
       }
     } catch (error) {
@@ -715,17 +728,20 @@ async function generateTweet(proxies = []) {
   }
   
   if (!tweetText) {
-    throw new Error(`Failed to generate tweet with Groq: ${lastError ? lastError.message : 'Unknown error'}`);
-  }
-  
-  tweetText = cleanTweetText(tweetText);
-  
-  if (!tweetText.includes('#SOH') && !tweetText.includes('#saviorofhealth')) {
-    if (tweetText.length < 250) {
-      tweetText = tweetText + ' #SOH #saviorofhealth';
-    } else {
-      tweetText = tweetText.substring(0, 245) + ' #SOH #saviorofhealth';
-    }
+    const fallbacks = [
+      "Small daily habits lead to big health changes over time! 🏃‍♂️ What's one health habit you've stuck with? #SOH #saviorofhealth",
+      "Prioritizing my health has been a game-changer this year! 💪 What changes have you made? #SOH #saviorofhealth",
+      "Sleep, nutrition, movement - the three pillars of good health! 🌟 Which one are you focusing on? #SOH #saviorofhealth",
+      "Started my health journey and already feeling the difference! 🌱 Small steps every day. #SOH #saviorofhealth",
+      "Health is wealth, and I'm finally investing in myself! 💚 What's your wellness goal? #SOH #saviorofhealth",
+      "Waking up early to exercise has been life-changing! ⏰ Who else is an early bird? #SOH #saviorofhealth",
+      "Meal prepping has saved my health and my wallet! 🥗 What's your favorite healthy meal? #SOH #saviorofhealth",
+      "Mental health matters just as much as physical health! 🧠 Taking time for self-care today. #SOH #saviorofhealth",
+      "Hydration is key! 💧 How much water are you drinking today? #SOH #saviorofhealth",
+      "Fitness isn't about perfection, it's about consistency! 🏋️‍♂️ Keep showing up. #SOH #saviorofhealth"
+    ];
+    tweetText = fallbacks[Math.floor(Math.random() * fallbacks.length)];
+    log(`Using fallback tweet`, 'warning');
   }
   
   if (!tweetText.includes('#SOH')) {
