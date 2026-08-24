@@ -15,13 +15,11 @@ const PROXY_FILE = path.join(BASE_DIR, 'proxy.txt');
 const CONFIG = {
   apiUrl: 'https://saviorofhealth.app',
   xBearer: 'AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA',
-  maxPostsPerDay: 5,
+  maxPostsPerDay: 2,
   groqTimeout: 30000,
   groqModels: [
-    'groq/compound',
-    'groq/compound-mini',
     'qwen/qwen3.6-27b',
-    'allam-2-7b'
+    'canopylabs/orpheus-v1-english'
   ],
   gptOssModels: [
     'openai/gpt-oss-20b',
@@ -78,7 +76,6 @@ function getRandomUserAgent() {
 }
 
 function generateTransactionId() {
-  // Generate a UUID-like transaction ID that X requires
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
   let id = '';
   for (let i = 0; i < 64; i++) {
@@ -88,17 +85,16 @@ function generateTransactionId() {
 }
 
 function stripMarkdown(text) {
-  // Remove markdown formatting
   return text
-    .replace(/\*\*(.*?)\*\*/g, '$1')  // Remove bold **text**
-    .replace(/\*(.*?)\*/g, '$1')      // Remove italics *text*
-    .replace(/__(.*?)__/g, '$1')      // Remove bold __text__
-    .replace(/_(.*?)_/g, '$1')        // Remove italics _text_
-    .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')  // Remove links [text](url)
-    .replace(/^#+\s+/gm, '')          // Remove headers
-    .replace(/^[-*]\s+/gm, '')        // Remove list markers
-    .replace(/```[\s\S]*?```/g, '')   // Remove code blocks
-    .replace(/`([^`]+)`/g, '$1')      // Remove inline code
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/__(.*?)__/g, '$1')
+    .replace(/_(.*?)_/g, '$1')
+    .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
+    .replace(/^#+\s+/gm, '')
+    .replace(/^[-*]\s+/gm, '')
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/`([^`]+)`/g, '$1')
     .trim();
 }
 
@@ -216,7 +212,7 @@ function getProxyForSession(proxies) {
   }
   
   sessionProxy = workingProxies[Math.floor(Math.random() * workingProxies.length)];
-  log(`🌐 Using proxy for session: ${sessionProxy.split('@').pop() || sessionProxy}`, 'info');
+  log(`🌐 Using proxy for session: ${proxyString.split('@').pop() || proxyString}`, 'info');
   return sessionProxy;
 }
 
@@ -425,27 +421,57 @@ class GroqManager {
 
         answer = answer.trim();
         answer = answer.replace(/^["']|["']$/g, '').trim();
-
-        // Strip markdown formatting that Groq sometimes adds
         answer = stripMarkdown(answer);
 
-        // If still starts with markdown headers or reasoning, extract the tweet
+        const preamblePhrases = [
+          "here's",
+          "here is",
+          "this tweet",
+          "tweet:",
+          "my tweet:",
+          "a tweet",
+          "this is a",
+          "i'd write",
+          "you could",
+          "you might",
+          "one example",
+          "something like",
+          "perhaps",
+          "how about",
+          "try this",
+          "note:",
+          "based on",
+          "concise",
+          "meets the requirements",
+          "genuine-sounding"
+        ];
+
         const lines = answer.split('\n').filter(l => l.trim());
         let cleanAnswer = '';
         
         for (const line of lines) {
-          const trimmed = line.trim();
-          // Skip markdown headers, lists, and reasoning lines
+          const trimmed = line.trim().toLowerCase();
+          
+          let isPreamble = false;
+          for (const phrase of preamblePhrases) {
+            if (trimmed.startsWith(phrase)) {
+              isPreamble = true;
+              break;
+            }
+          }
+          
+          if (isPreamble) continue;
+          
           if (trimmed.startsWith('#') || 
-              trimmed.startsWith('**') && trimmed.endsWith('**') ||
+              trimmed.startsWith('**') ||
               trimmed.startsWith('-') && trimmed.length < 20 ||
-              trimmed.toLowerCase().includes('reasoning') ||
-              trimmed.toLowerCase().includes('note:')) {
+              trimmed.startsWith('*')) {
             continue;
           }
-          // Take the first substantial line as the tweet
-          if (trimmed.length > 10 && !cleanAnswer) {
-            cleanAnswer = trimmed;
+          
+          const originalLine = line.trim();
+          if (originalLine.length > 10 && !cleanAnswer) {
+            cleanAnswer = originalLine;
             break;
           }
         }
@@ -454,8 +480,11 @@ class GroqManager {
           cleanAnswer = answer;
         }
 
-        cleanAnswer = cleanAnswer.replace(/^\*\*|\*\*$/g, '').trim(); // Remove ** from start/end
-        cleanAnswer = cleanAnswer.replace(/^- /, '').trim(); // Remove list markers
+        cleanAnswer = cleanAnswer
+          .replace(/^\*\*|\*\*$/g, '')
+          .replace(/^- /, '')
+          .replace(/^["']|["']$/, '')
+          .trim();
 
         if (cleanAnswer.length < 10 || cleanAnswer.length > 280) {
           this.currentModelIndex = (this.currentModelIndex + 1) % this.allModels.length;
@@ -535,39 +564,36 @@ async function fetchWithProxy(url, options = {}, proxyString = null) {
 }
 
 function cleanTweetText(text) {
-  // First, aggressively remove markdown that might have gotten through
   let cleaned = text
-    .replace(/\*\*(.*?)\*\*/g, '$1')  // Remove bold
-    .replace(/\*(.*?)\*/g, '$1')      // Remove italics
-    .replace(/__(.*?)__/g, '$1')      // Remove bold
-    .replace(/_(.*?)_/g, '$1')        // Remove italics
-    .replace(/^#+\s+/gm, '')          // Remove headers
-    .replace(/^[-*]\s+/gm, '')        // Remove list markers
-    .replace(/```[\s\S]*?```/g, '')   // Remove code blocks
-    .replace(/`([^`]+)`/g, '$1')      // Remove inline code
-    // Replace special characters with standard ones
-    .replace(/'/g, "'")        // Curly apostrophe to straight
-    .replace(/'/g, "'")        // Curly quote to straight
-    .replace(/"/g, '"')        // Curly double quote to straight
-    .replace(/"/g, '"')        // Curly double quote to straight
-    .replace(/‑/g, '-')        // Special dash to regular dash
-    .replace(/—/g, '-')        // Em dash to regular dash
-    .replace(/–/g, '-')        // En dash to regular dash
-    .replace(/…/g, '...')      // Ellipsis to three dots
-    .replace(/\u2019/g, "'")   // Unicode apostrophe
-    .replace(/\u2018/g, "'")   // Unicode left quote
-    .replace(/\u201C/g, '"')   // Unicode left double quote
-    .replace(/\u201D/g, '"')   // Unicode right double quote
-    .replace(/\u2013/g, '-')   // Unicode en dash
-    .replace(/\u2014/g, '-')   // Unicode em dash
-    .replace(/\u2026/g, '...') // Unicode ellipsis
-    .replace(/\u00A0/g, ' ')   // Non-breaking space
-    .replace(/\u200B/g, '')    // Zero-width space
-    .replace(/\u200C/g, '')    // Zero-width non-joiner
-    .replace(/\u200D/g, '')    // Zero-width joiner
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/__(.*?)__/g, '$1')
+    .replace(/_(.*?)_/g, '$1')
+    .replace(/^#+\s+/gm, '')
+    .replace(/^[-*]\s+/gm, '')
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/'/g, "'")
+    .replace(/'/g, "'")
+    .replace(/"/g, '"')
+    .replace(/"/g, '"')
+    .replace(/‑/g, '-')
+    .replace(/—/g, '-')
+    .replace(/–/g, '-')
+    .replace(/…/g, '...')
+    .replace(/\u2019/g, "'")
+    .replace(/\u2018/g, "'")
+    .replace(/\u201C/g, '"')
+    .replace(/\u201D/g, '"')
+    .replace(/\u2013/g, '-')
+    .replace(/\u2014/g, '-')
+    .replace(/\u2026/g, '...')
+    .replace(/\u00A0/g, ' ')
+    .replace(/\u200B/g, '')
+    .replace(/\u200C/g, '')
+    .replace(/\u200D/g, '')
     .trim();
   
-  // Remove any remaining non-ASCII characters except emojis and common symbols
   let result = '';
   const emojiRegex = /[\u{1F000}-\u{1FFFF}]/u;
   const allowedSymbols = /[a-zA-Z0-9 .,!?#$%&()*+\-/:;<=>@[\]^_{|}~']/;
@@ -578,9 +604,7 @@ function cleanTweetText(text) {
     }
   }
   
-  // Remove duplicate spaces
   result = result.replace(/\s+/g, ' ').trim();
-  
   return result;
 }
 
@@ -588,18 +612,18 @@ async function generateTweet(proxies = []) {
   const groq = initGroqManager();
   
   const prompts = [
-    `Yo, just write a real quick tweet like you're texting a friend about your health today. Something casual af. Keep it under 280 characters. Gotta have #SOH and #saviorofhealth in there. Just the tweet, nothing else.`,
-    `Write a tweet like you just lived through it and want to share with your homies. Real casual vibes. Under 280 chars. Need #SOH and #saviorofhealth. No cap, just facts about your day.`,
-    `drop a tweet rn about smashing your health goals. sound like you're actually hyped about it. under 280 chars. include #SOH #saviorofhealth. just the tweet fam no explanations.`,
-    `make a tweet like you're posting from your phone real quick. something genuine about wellness today. keep it chill and real. under 280 chars. #SOH #saviorofhealth gotta be in there. only tweet, no extra stuff.`,
-    `tweet something about your health like you're talking to your crew. be authentic, be real, be you. under 280 chars. #SOH and #saviorofhealth required. just write the tweet.`,
-    `ok so write a short tweet celebrating a W for your health today. keep it hype but real. under 280 chars. #SOH #saviorofhealth must be there. just the tweet tho.`,
-    `write a tweet about being consistent with health stuff. sound like an actual person who actually cares. under 280 chars. #SOH in there. just tweet it out fr fr.`,
-    `just vibe and write a quick wellness tweet like you mean it. something you'd actually post. under 280 chars. #SOH #saviorofhealth needed. only the tweet words no fluff.`,
-    `drop a tweet about your health journey like you're keeping it real with people. under 280 chars. gotta have #SOH and #saviorofhealth. straight up just the tweet.`,
-    `make a tweet that sounds like something a real person would actually post today. about health obvs. under 280 chars. #SOH #saviorofhealth. tweet only.`,
-    `yo write something about staying healthy that sounds natural not robotic. like how you'd actually talk. under 280 chars. include #SOH and #saviorofhealth. just the tweet fr.`,
-    `write a tweet being real about health stuff. use slang if u want, keep it chill. under 280 chars. #SOH #saviorofhealth required. only output the tweet itself.`,
+    `JUST TWEET THIS. NO PREAMBLE. Just a tweet about health today under 280 chars with #SOH #saviorofhealth. Be human. Write it now.`,
+    `TWEET NOW. No "here's", no "this tweet", no explanation. Just write what you'd post about health. Under 280 chars. #SOH #saviorofhealth.`,
+    `Stop explaining. Just write a tweet right now about your health. Casual human vibes. Under 280 chars. #SOH #saviorofhealth. NOW.`,
+    `Tweet only. No words before or after. Just the tweet about staying healthy today. Under 280 chars. #SOH #saviorofhealth.`,
+    `Write JUST the tweet. Nothing else. About your health journey. Casual and real. Under 280 chars. #SOH #saviorofhealth.`,
+    `Only output a tweet. No preamble. About health. Human. Under 280 chars. #SOH #saviorofhealth. Do it now.`,
+    `I need ONLY a tweet now. No introduction. Just health content. Human style. Under 280 chars. #SOH #saviorofhealth.`,
+    `Generate a single tweet ONLY. No setup text. Pure tweet. Health topic. Under 280 chars. #SOH #saviorofhealth.`,
+    `Tweet this second. Nothing before. Just one tweet about wellness. Human tone. Under 280 chars. #SOH #saviorofhealth.`,
+    `DO NOT EXPLAIN. Just tweet about your health. Casual. Under 280 chars. #SOH #saviorofhealth.`,
+    `Forget preamble. Tweet health content now. Human voice. Under 280 chars. #SOH #saviorofhealth. Start with no intro.`,
+    `Zero introduction. Just a health tweet. Real human. Under 280 chars. #SOH #saviorofhealth. Tweet it.`,
   ];
   
   const prompt = prompts[Math.floor(Math.random() * prompts.length)];
@@ -625,10 +649,8 @@ async function generateTweet(proxies = []) {
     throw new Error(`Failed to generate tweet with Groq: ${lastError ? lastError.message : 'Unknown error'}`);
   }
   
-  // Clean the tweet text
   tweetText = cleanTweetText(tweetText);
   
-  // Ensure hashtags
   if (!tweetText.includes('#SOH') && !tweetText.includes('#saviorofhealth')) {
     if (tweetText.length < 250) {
       tweetText = tweetText + ' #SOH #saviorofhealth';
@@ -647,7 +669,6 @@ async function generateTweet(proxies = []) {
   tweetText = tweetText.replace(/#SOH\s+#SOH/g, '#SOH');
   tweetText = tweetText.replace(/#saviorofhealth\s+#saviorofhealth/g, '#saviorofhealth');
   
-  // Final cleanup
   tweetText = cleanTweetText(tweetText);
   
   if (tweetText.length < 10 || tweetText.length > 280) {
@@ -699,10 +720,8 @@ async function postTweet(xtoken, text, proxies = [], retries = 0, isFirstPost = 
 
   const proxyString = proxies.length > 0 ? getProxyForSession(proxies) : null;
 
-  // Clean text before sending
   let finalText = cleanTweetText(text);
   
-  // Log cleaned text for debugging
   log(`📝 Cleaned tweet (${finalText.length} chars): ${finalText.substring(0, 60)}...`, 'debug');
 
   if (!isFirstPost) {
@@ -719,10 +738,8 @@ async function postTweet(xtoken, text, proxies = [], retries = 0, isFirstPost = 
   log(`⌨️ Simulating typing for ${Math.floor(typingDelay/1000)}s...`, 'info');
   await sleep(typingDelay);
 
-  // Generate transaction ID (CRITICAL - X requires this!)
   const transactionId = generateTransactionId();
 
-  // FIXED HEADERS - All required by X for successful posting
   const headers = {
     'accept': '*/*',
     'accept-language': 'en-GB,en;q=0.9,fr;q=0.8,ar;q=0.7,en-US;q=0.6,zh-CN;q=0.5,zh;q=0.4',
@@ -745,7 +762,6 @@ async function postTweet(xtoken, text, proxies = [], retries = 0, isFirstPost = 
     'x-twitter-client-language': 'en',
   };
 
-  // Set cookie
   headers['cookie'] = `auth_token=${xtoken.auth_token}; ct0=${xtoken.ct0}`;
 
   const payload = {
@@ -821,7 +837,6 @@ async function postTweet(xtoken, text, proxies = [], retries = 0, isFirstPost = 
       throw new Error('Invalid response from X');
     }
 
-    // Check for successful tweet
     if (result?.data?.create_tweet?.tweet_results?.result?.rest_id) {
       const tweetId = result.data.create_tweet.tweet_results.result.rest_id;
       const username = result.data.create_tweet.tweet_results.result.core?.user_results?.result?.legacy?.screen_name;
@@ -830,29 +845,24 @@ async function postTweet(xtoken, text, proxies = [], retries = 0, isFirstPost = 
       return `https://twitter.com/${username || 'user'}/status/${tweetId}`;
     }
 
-    // Check for empty result - try adding emoji and retry
     if (result?.data?.create_tweet?.tweet_results && Object.keys(result.data.create_tweet.tweet_results).length === 0) {
       const emojis = [' 💪', ' 🌟', ' ✨', ' 🔥', ' 🎯', ' 💚', ' 🌱', ' 💯', ' ⚡', ' 🌈', ' 🚀', ' 💫'];
       const suffix = emojis[Math.floor(Math.random() * emojis.length)];
       
-      // Try to make the tweet slightly different
       if (finalText.length < 270) {
         finalText = finalText + suffix;
       } else {
-        // Remove last few chars and add suffix
         finalText = finalText.substring(0, 265) + suffix;
       }
       
       log(`🔄 Tweet rejected, retrying with suffix: ${suffix}`, 'rotate');
       
       if (retries < MAX_RETRIES) {
-        // Don't wait before retry for rejected tweets
         return postTweet(xtoken, finalText, proxies, retries + 1, false);
       }
       throw new Error('Tweet rejected after retries');
     }
 
-    // Check for errors
     if (result?.errors) {
       const errorMsg = result.errors[0]?.message || 'Unknown error';
       log(`❌ X API Error: ${errorMsg}`, 'error');
